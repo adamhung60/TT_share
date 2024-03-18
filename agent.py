@@ -27,7 +27,7 @@ def train(ts):
 
     model = PPO("MlpPolicy", vec_env, verbose=0,
                 gamma = 1.0,
-                n_steps= 8192,
+                n_steps= 8192*2,
                 ) 
 
     model.learn(total_timesteps=ts,progress_bar=True, callback=eval_callback)
@@ -40,13 +40,14 @@ def test(eps):
     test_env = gym.make("TT2", render_mode="human")
     test_env = Monitor(test_env)
     vec_test_env = DummyVecEnv([lambda: test_env])
-    vec_test_env = VecNormalize.load("logs/vec_normalize_bob.pkl", vec_test_env)
+    vec_test_env = VecNormalize.load("logs/vec_normalize.pkl", vec_test_env)
 
-    model = PPO.load("logs/ppo_bob")
+    model = PPO.load("logs/ppo_tt")
     
     mean_rewards, _ = evaluate_policy(model, vec_test_env, n_eval_episodes=eps, deterministic=True, return_episode_rewards=True)
     #print("Rewards:", mean_rewards)
         
 if __name__ == '__main__':
-    train(2e7)
-    test(1000)
+    
+    #train(3e7)
+    test(100)
