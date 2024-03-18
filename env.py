@@ -30,12 +30,12 @@ class TT2Env(gym.Env):
         self.h_table = 0.1
 
         # ball trajectory ranges
-        self.goal_x = (-1.3, -0.8)
+        self.goal_x = (-1.3, -0.6)
         self.goal_y = (-0.7, 0.7)
-        self.start_x = (0.5, 1.5)
-        self.start_y = (-0.7, 0.7)
-        self.start_z = (0.2, 0.3)
-        self.vz_bounds = (2.8,4)
+        self.start_x = (0.3, 1.6)
+        self.start_y = (-0.9, 0.9)
+        self.start_z = (0.2, 0.5)
+        self.vz_bounds = (2.5,4)
 
         self.joints = [0, 1, 2, 3, 4, 5]
         self.numJoints = len(self.joints)
@@ -103,8 +103,8 @@ class TT2Env(gym.Env):
         p.resetBaseVelocity(self.ball, linearVelocity = v)
 
         #make the paddle and table bouncy
-        p.changeDynamics(self.ball, -1, restitution = 0.95)
-        p.changeDynamics(self.table, -1, restitution = 0.95)
+        p.changeDynamics(self.ball, -1, restitution = 0.99)
+        p.changeDynamics(self.table, -1, restitution = 0.99)
         p.changeDynamics(self.robot, 2, restitution = 0.95)
 
         observation = self.get_obs()
@@ -140,9 +140,9 @@ class TT2Env(gym.Env):
             dx = x - self.l_table/2
         else:
             dx = 0
-        if y > self.w_table:
+        if y > self.w_table/2:
             dy = y - self.w_table
-        elif y < -self.w_table:
+        elif y < -self.w_table/2:
             dy = self.w_table - y
         else:
             dy = 0
@@ -153,8 +153,17 @@ class TT2Env(gym.Env):
         rob = list(p.getLinkState(self.robot, self.numJoints-1)[0])
         ball = list(p.getBasePositionAndOrientation(self.ball)[0])
         return self.d_euc(rob, ball)
+    
+    def reset_pose(self):
+        p.setJointMotorControlArray(
+            bodyIndex = self.robot, 
+            jointIndices = self.joints, 
+            controlMode = p.POSITION_CONTROL, 
+            targetPositions = [0]*self.numJoints,
+            targetVelocities = [5]*self.numJoints,
+            forces = [500]*self.numJoints)
 
-    def get_reward(self): 
+    def get_reward(self):
         if self.state == 0: # up until the ball bounces on table
             self.prevent_bug +=1
             if p.getContactPoints(self.table, self.ball) and self.prevent_bug > 5:
@@ -168,6 +177,7 @@ class TT2Env(gym.Env):
             if r2b < self.min_r2b:
                 self.min_r2b = r2b
             if p.getContactPoints(self.robot, self.ball, self.numJoints-1): # paddle makes contact with ball
+                self.reset_timer = 0
                 self.state = 2
                 self.ball_touch_count += 1
                 return 1
@@ -177,7 +187,16 @@ class TT2Env(gym.Env):
         elif self.state == 2: # up until ball lands
             point = p.getContactPoints(self.ball, self.plane) or p.getContactPoints(self.ball, self.table)
             while not point:
+                self.reset_timer +=1
                 self.steps_taken += 1
+                # ______________________________
+                if self.steps_taken >= self.max_steps:
+                    self.truncated = True
+                    print("stuck in while")
+                    return 0
+                # ______________________________
+                if self.reset_timer > 50:
+                    self.reset_pose()
                 p.stepSimulation()
                 if self.render_mode == "human":
                     time.sleep(0.0001) # small delay for better visualization
@@ -189,7 +208,7 @@ class TT2Env(gym.Env):
             self.terminated = True
             if d2t == 0:
                 self.ball_in_count += 1
-                return 10 + max(-d2m/3, -1)
+                return 10 - d2m
             else:
                 return max(-d2m/3, -1)
         return 0
@@ -222,10 +241,10 @@ class TT2Env(gym.Env):
                 #print("truncating (not good)")
 
             # for monitoring training
-            if self.episode_count >= 5000:
-                print("balls in / 5000 = ", self.ball_in_count)
+            if self.episode_count >= 10000:
+                print("balls in / 10000 = ", self.ball_in_count)
                 self.ball_in_vec += [self.ball_in_count]
-                print("balls touched / 5000 = ", self.ball_touch_count)
+                print("balls touched / 10000 = ", self.ball_touch_count)
                 print("average d2t for touched balls = ", 
                       self.d2t_sum/(self.ball_touch_count+ 0.0001)) # inhibit division by 0
                 self.episode_count = 0
